@@ -238,3 +238,658 @@ INSERT INTO employees (location_id, full_name, phone, role) VALUES
 
 (2, 'Yoga Prasetyo', '081300000006', 'Maintenance Technician'),
 (2, 'Kevin Adrian', '081300000007', 'Maintenance Technician');
+
+
+-- =========================================================
+-- SIMULASI 5 CUSTOMER (berdasarkan range room_id)
+-- Jepang: room_id 1-20  -> Jiro, Louis
+-- Eropa : room_id 21-40 -> Wilbert, Steven, Kurniawan
+-- Catatan:
+-- - Booking dibuat tidak bentrok (tanggal dibuat beda).
+-- =========================================================
+
+
+-- =========================================================
+-- A) JIRO (Jepang) pilih room_id = 3 
+-- =========================================================
+
+-- A1) Daftar akun
+INSERT INTO users (full_name, email, phone)
+VALUES ('Jiro', 'jiro@example.com', '081700000001');
+
+-- A2) Cek room yang dipilih harus ada & status available
+SELECT room_id, room_name, status, price_per_day
+FROM rooms
+WHERE room_id = 3;
+
+-- A3) Cek bentrok booking (harus 0)
+SELECT COUNT(*) AS conflict_count
+FROM bookings
+WHERE room_id = 3
+  AND status <> 'cancelled'
+  AND start_date < '2025-12-23'
+  AND end_date   > '2025-12-20';
+
+-- A4) Buat booking (pending)
+INSERT INTO bookings (
+  user_id, room_id,
+  start_date, end_date, total_days,
+  dp_amount,
+  original_total_price, discount_amount, total_price,
+  status,
+  ktp_upload_url, ktp_verification_status, ktp_verified_at
+)
+VALUES (
+  (SELECT user_id FROM users WHERE email='jiro@example.com' ORDER BY user_id DESC LIMIT 1),
+  3,
+  '2025-12-20', '2025-12-23', 3,
+  300000,
+  1000000, 0, 1000000,
+  'pending',
+  NULL, 'not_uploaded', NULL
+);
+
+-- A5) Buat 2 invoice DP & Full
+INSERT INTO invoices (booking_id, invoice_type, amount, issued_date, paid_date, status)
+VALUES
+  ((SELECT booking_id FROM bookings
+    WHERE user_id=(SELECT user_id FROM users WHERE email='jiro@example.com' ORDER BY user_id DESC LIMIT 1)
+    ORDER BY booking_id DESC LIMIT 1),
+   'DP', 300000, NOW(), NULL, 'unpaid'),
+  ((SELECT booking_id FROM bookings
+    WHERE user_id=(SELECT user_id FROM users WHERE email='jiro@example.com' ORDER BY user_id DESC LIMIT 1)
+    ORDER BY booking_id DESC LIMIT 1),
+   'Full', 700000, NOW(), NULL, 'unpaid');
+
+-- A6) Bayar DP -> booking dp_paid -> room booked
+UPDATE invoices
+SET status='paid', paid_date=NOW()
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='jiro@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1)
+  AND invoice_type='DP';
+
+UPDATE bookings
+SET status='dp_paid'
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='jiro@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1);
+
+UPDATE rooms
+SET status='booked'
+WHERE room_id=3;
+
+-- A7) Upload & verify KTP
+UPDATE bookings
+SET ktp_upload_url='https://cloud.example.com/ktp/jiro.jpg',
+    ktp_verification_status='pending',
+    ktp_verified_at=NULL
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='jiro@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1);
+
+UPDATE bookings
+SET ktp_verification_status='verified',
+    ktp_verified_at=NOW()
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='jiro@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1);
+
+-- A8) Bayar Full
+UPDATE invoices
+SET status='paid', paid_date=NOW()
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='jiro@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1)
+  AND invoice_type='Full';
+
+-- A9) Check-in -> active, room occupied
+UPDATE bookings
+SET status='active'
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='jiro@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1);
+
+UPDATE rooms
+SET status='occupied'
+WHERE room_id=3;
+
+-- A10) Check-out -> completed, room cleaning
+UPDATE bookings
+SET status='completed'
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='jiro@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1);
+
+UPDATE rooms
+SET status='cleaning'
+WHERE room_id=3;
+
+-- A11) Buat task cleaning (assign 1 Cleaning Staff di lokasi sama)
+INSERT INTO room_cleaning (room_id, employee_id, booking_id, cleaning_date, status)
+SELECT b.room_id, e.employee_id, b.booking_id, NOW(), 'scheduled'
+FROM bookings b
+JOIN rooms r ON r.room_id=b.room_id
+JOIN employees e ON e.location_id=r.location_id
+WHERE b.booking_id=(SELECT booking_id FROM bookings
+                    WHERE user_id=(SELECT user_id FROM users WHERE email='jiro@example.com' ORDER BY user_id DESC LIMIT 1)
+                    ORDER BY booking_id DESC LIMIT 1)
+  AND e.role='Cleaning Staff'
+ORDER BY e.employee_id
+LIMIT 1;
+
+-- A12) Cleaning selesai -> room available
+UPDATE room_cleaning
+SET status='in_progress'
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='jiro@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1);
+
+UPDATE room_cleaning
+SET status='completed'
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='jiro@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1);
+
+UPDATE rooms
+SET status='available'
+WHERE room_id=3;
+
+
+
+-- =========================================================
+-- B) LOUIS (Jepang) pilih room_id = 7 
+-- =========================================================
+
+INSERT INTO users (full_name, email, phone)
+VALUES ('Louis', 'louis@example.com', '081700000005');
+
+SELECT room_id, room_name, status, price_per_day
+FROM rooms
+WHERE room_id = 7;
+
+SELECT COUNT(*) AS conflict_count
+FROM bookings
+WHERE room_id = 7
+  AND status <> 'cancelled'
+  AND start_date < '2025-12-26'
+  AND end_date   > '2025-12-24';
+
+INSERT INTO bookings (
+  user_id, room_id,
+  start_date, end_date, total_days,
+  dp_amount,
+  original_total_price, discount_amount, total_price,
+  status,
+  ktp_upload_url, ktp_verification_status, ktp_verified_at
+)
+VALUES (
+  (SELECT user_id FROM users WHERE email='louis@example.com' ORDER BY user_id DESC LIMIT 1),
+  7,
+  '2025-12-24', '2025-12-26', 2,
+  240000,
+  800000, 0, 800000,
+  'pending',
+  NULL, 'not_uploaded', NULL
+);
+
+INSERT INTO invoices (booking_id, invoice_type, amount, issued_date, paid_date, status)
+VALUES
+  ((SELECT booking_id FROM bookings
+    WHERE user_id=(SELECT user_id FROM users WHERE email='louis@example.com' ORDER BY user_id DESC LIMIT 1)
+    ORDER BY booking_id DESC LIMIT 1),
+   'DP', 240000, NOW(), NULL, 'unpaid'),
+  ((SELECT booking_id FROM bookings
+    WHERE user_id=(SELECT user_id FROM users WHERE email='louis@example.com' ORDER BY user_id DESC LIMIT 1)
+    ORDER BY booking_id DESC LIMIT 1),
+   'Full', 560000, NOW(), NULL, 'unpaid');
+
+UPDATE invoices
+SET status='paid', paid_date=NOW()
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='louis@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1)
+  AND invoice_type='DP';
+
+UPDATE bookings
+SET status='dp_paid'
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='louis@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1);
+
+UPDATE rooms
+SET status='booked'
+WHERE room_id=7;
+
+UPDATE bookings
+SET ktp_upload_url='https://cloud.example.com/ktp/louis.jpg',
+    ktp_verification_status='pending',
+    ktp_verified_at=NULL
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='louis@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1);
+
+UPDATE bookings
+SET ktp_verification_status='verified',
+    ktp_verified_at=NOW()
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='louis@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1);
+
+UPDATE invoices
+SET status='paid', paid_date=NOW()
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='louis@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1)
+  AND invoice_type='Full';
+
+UPDATE bookings
+SET status='active'
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='louis@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1);
+
+UPDATE rooms
+SET status='occupied'
+WHERE room_id=7;
+
+UPDATE bookings
+SET status='completed'
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='louis@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1);
+
+UPDATE rooms
+SET status='cleaning'
+WHERE room_id=7;
+
+INSERT INTO room_cleaning (room_id, employee_id, booking_id, cleaning_date, status)
+SELECT b.room_id, e.employee_id, b.booking_id, NOW(), 'scheduled'
+FROM bookings b
+JOIN rooms r ON r.room_id=b.room_id
+JOIN employees e ON e.location_id=r.location_id
+WHERE b.booking_id=(SELECT booking_id FROM bookings
+                    WHERE user_id=(SELECT user_id FROM users WHERE email='louis@example.com' ORDER BY user_id DESC LIMIT 1)
+                    ORDER BY booking_id DESC LIMIT 1)
+  AND e.role='Cleaning Staff'
+ORDER BY e.employee_id
+LIMIT 1;
+
+UPDATE room_cleaning
+SET status='in_progress'
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='louis@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1);
+
+UPDATE room_cleaning
+SET status='completed'
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='louis@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1);
+
+UPDATE rooms
+SET status='available'
+WHERE room_id=7;
+
+
+
+-- =========================================================
+-- C) KURNIAWAN (Eropa) pilih room_id = 22 
+-- =========================================================
+
+INSERT INTO users (full_name, email, phone)
+VALUES ('Kurniawan', 'kurniawan@example.com', '081700000002');
+
+SELECT room_id, room_name, status, price_per_day
+FROM rooms
+WHERE room_id = 22;
+
+SELECT COUNT(*) AS conflict_count
+FROM bookings
+WHERE room_id = 22
+  AND status <> 'cancelled'
+  AND start_date < '2025-12-30'
+  AND end_date   > '2025-12-27';
+
+INSERT INTO bookings (
+  user_id, room_id,
+  start_date, end_date, total_days,
+  dp_amount,
+  original_total_price, discount_amount, total_price,
+  status,
+  ktp_upload_url, ktp_verification_status, ktp_verified_at
+)
+VALUES (
+  (SELECT user_id FROM users WHERE email='kurniawan@example.com' ORDER BY user_id DESC LIMIT 1),
+  22,
+  '2025-12-27', '2025-12-30', 3,
+  270000,
+  900000, 0, 900000,
+  'pending',
+  NULL, 'not_uploaded', NULL
+);
+
+INSERT INTO invoices (booking_id, invoice_type, amount, issued_date, paid_date, status)
+VALUES
+  ((SELECT booking_id FROM bookings
+    WHERE user_id=(SELECT user_id FROM users WHERE email='kurniawan@example.com' ORDER BY user_id DESC LIMIT 1)
+    ORDER BY booking_id DESC LIMIT 1),
+   'DP', 270000, NOW(), NULL, 'unpaid'),
+  ((SELECT booking_id FROM bookings
+    WHERE user_id=(SELECT user_id FROM users WHERE email='kurniawan@example.com' ORDER BY user_id DESC LIMIT 1)
+    ORDER BY booking_id DESC LIMIT 1),
+   'Full', 630000, NOW(), NULL, 'unpaid');
+
+UPDATE invoices SET status='paid', paid_date=NOW()
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='kurniawan@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1)
+  AND invoice_type='DP';
+
+UPDATE bookings SET status='dp_paid'
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='kurniawan@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1);
+
+UPDATE rooms SET status='booked' WHERE room_id=22;
+
+UPDATE bookings
+SET ktp_upload_url='https://cloud.example.com/ktp/kurniawan.jpg',
+    ktp_verification_status='pending',
+    ktp_verified_at=NULL
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='kurniawan@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1);
+
+UPDATE bookings
+SET ktp_verification_status='verified',
+    ktp_verified_at=NOW()
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='kurniawan@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1);
+
+UPDATE invoices SET status='paid', paid_date=NOW()
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='kurniawan@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1)
+  AND invoice_type='Full';
+
+UPDATE bookings SET status='active'
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='kurniawan@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1);
+
+UPDATE rooms SET status='occupied' WHERE room_id=22;
+
+UPDATE bookings SET status='completed'
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='kurniawan@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1);
+
+UPDATE rooms SET status='cleaning' WHERE room_id=22;
+
+INSERT INTO room_cleaning (room_id, employee_id, booking_id, cleaning_date, status)
+SELECT b.room_id, e.employee_id, b.booking_id, NOW(), 'scheduled'
+FROM bookings b
+JOIN rooms r ON r.room_id=b.room_id
+JOIN employees e ON e.location_id=r.location_id
+WHERE b.booking_id=(SELECT booking_id FROM bookings
+                    WHERE user_id=(SELECT user_id FROM users WHERE email='kurniawan@example.com' ORDER BY user_id DESC LIMIT 1)
+                    ORDER BY booking_id DESC LIMIT 1)
+  AND e.role='Cleaning Staff'
+ORDER BY e.employee_id
+LIMIT 1;
+
+UPDATE room_cleaning SET status='in_progress'
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='kurniawan@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1);
+
+UPDATE room_cleaning SET status='completed'
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='kurniawan@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1);
+
+UPDATE rooms SET status='available' WHERE room_id=22;
+
+
+
+-- =========================================================
+-- D) STEVEN (Eropa) pilih room_id = 28
+-- =========================================================
+
+INSERT INTO users (full_name, email, phone)
+VALUES ('Steven', 'steven@example.com', '081700000003');
+
+SELECT room_id, room_name, status, price_per_day
+FROM rooms
+WHERE room_id = 28;
+
+SELECT COUNT(*) AS conflict_count
+FROM bookings
+WHERE room_id = 28
+  AND status <> 'cancelled'
+  AND start_date < '2026-01-03'
+  AND end_date   > '2025-12-31';
+
+INSERT INTO bookings (
+  user_id, room_id,
+  start_date, end_date, total_days,
+  dp_amount,
+  original_total_price, discount_amount, total_price,
+  status,
+  ktp_upload_url, ktp_verification_status, ktp_verified_at
+)
+VALUES (
+  (SELECT user_id FROM users WHERE email='steven@example.com' ORDER BY user_id DESC LIMIT 1),
+  28,
+  '2025-12-31', '2026-01-03', 3,
+  360000,
+  1200000, 0, 1200000,
+  'pending',
+  NULL, 'not_uploaded', NULL
+);
+
+INSERT INTO invoices (booking_id, invoice_type, amount, issued_date, paid_date, status)
+VALUES
+  ((SELECT booking_id FROM bookings
+    WHERE user_id=(SELECT user_id FROM users WHERE email='steven@example.com' ORDER BY user_id DESC LIMIT 1)
+    ORDER BY booking_id DESC LIMIT 1),
+   'DP', 360000, NOW(), NULL, 'unpaid'),
+  ((SELECT booking_id FROM bookings
+    WHERE user_id=(SELECT user_id FROM users WHERE email='steven@example.com' ORDER BY user_id DESC LIMIT 1)
+    ORDER BY booking_id DESC LIMIT 1),
+   'Full', 840000, NOW(), NULL, 'unpaid');
+
+UPDATE invoices SET status='paid', paid_date=NOW()
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='steven@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1)
+  AND invoice_type='DP';
+
+UPDATE bookings SET status='dp_paid'
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='steven@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1);
+
+UPDATE rooms SET status='booked' WHERE room_id=28;
+
+UPDATE bookings
+SET ktp_upload_url='https://cloud.example.com/ktp/steven.jpg',
+    ktp_verification_status='pending',
+    ktp_verified_at=NULL
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='steven@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1);
+
+UPDATE bookings
+SET ktp_verification_status='verified',
+    ktp_verified_at=NOW()
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='steven@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1);
+
+UPDATE invoices SET status='paid', paid_date=NOW()
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='steven@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1)
+  AND invoice_type='Full';
+
+UPDATE bookings SET status='active'
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='steven@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1);
+
+UPDATE rooms SET status='occupied' WHERE room_id=28;
+
+UPDATE bookings SET status='completed'
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='steven@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1);
+
+UPDATE rooms SET status='cleaning' WHERE room_id=28;
+
+INSERT INTO room_cleaning (room_id, employee_id, booking_id, cleaning_date, status)
+SELECT b.room_id, e.employee_id, b.booking_id, NOW(), 'scheduled'
+FROM bookings b
+JOIN rooms r ON r.room_id=b.room_id
+JOIN employees e ON e.location_id=r.location_id
+WHERE b.booking_id=(SELECT booking_id FROM bookings
+                    WHERE user_id=(SELECT user_id FROM users WHERE email='steven@example.com' ORDER BY user_id DESC LIMIT 1)
+                    ORDER BY booking_id DESC LIMIT 1)
+  AND e.role='Cleaning Staff'
+ORDER BY e.employee_id
+LIMIT 1;
+
+UPDATE room_cleaning SET status='in_progress'
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='steven@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1);
+
+UPDATE room_cleaning SET status='completed'
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='steven@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1);
+
+UPDATE rooms SET status='available' WHERE room_id=28;
+
+
+
+-- =========================================================
+-- E) WILBERT (Eropa) pilih room_id = 35 
+-- =========================================================
+
+INSERT INTO users (full_name, email, phone)
+VALUES ('Wilbert', 'wilbert@example.com', '081700000004');
+
+SELECT room_id, room_name, status, price_per_day
+FROM rooms
+WHERE room_id = 35;
+
+SELECT COUNT(*) AS conflict_count
+FROM bookings
+WHERE room_id = 35
+  AND status <> 'cancelled'
+  AND start_date < '2026-01-06'
+  AND end_date   > '2026-01-04';
+
+INSERT INTO bookings (
+  user_id, room_id,
+  start_date, end_date, total_days,
+  dp_amount,
+  original_total_price, discount_amount, total_price,
+  status,
+  ktp_upload_url, ktp_verification_status, ktp_verified_at
+)
+VALUES (
+  (SELECT user_id FROM users WHERE email='wilbert@example.com' ORDER BY user_id DESC LIMIT 1),
+  35,
+  '2026-01-04', '2026-01-06', 2,
+  210000,
+  700000, 0, 700000,
+  'pending',
+  NULL, 'not_uploaded', NULL
+);
+
+INSERT INTO invoices (booking_id, invoice_type, amount, issued_date, paid_date, status)
+VALUES
+  ((SELECT booking_id FROM bookings
+    WHERE user_id=(SELECT user_id FROM users WHERE email='wilbert@example.com' ORDER BY user_id DESC LIMIT 1)
+    ORDER BY booking_id DESC LIMIT 1),
+   'DP', 210000, NOW(), NULL, 'unpaid'),
+  ((SELECT booking_id FROM bookings
+    WHERE user_id=(SELECT user_id FROM users WHERE email='wilbert@example.com' ORDER BY user_id DESC LIMIT 1)
+    ORDER BY booking_id DESC LIMIT 1),
+   'Full', 490000, NOW(), NULL, 'unpaid');
+
+UPDATE invoices SET status='paid', paid_date=NOW()
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='wilbert@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1)
+  AND invoice_type='DP';
+
+UPDATE bookings SET status='dp_paid'
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='wilbert@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1);
+
+UPDATE rooms SET status='booked' WHERE room_id=35;
+
+UPDATE bookings
+SET ktp_upload_url='https://cloud.example.com/ktp/wilbert.jpg',
+    ktp_verification_status='pending',
+    ktp_verified_at=NULL
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='wilbert@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1);
+
+UPDATE bookings
+SET ktp_verification_status='verified',
+    ktp_verified_at=NOW()
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='wilbert@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1);
+
+UPDATE invoices SET status='paid', paid_date=NOW()
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='wilbert@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1)
+  AND invoice_type='Full';
+
+UPDATE bookings SET status='active'
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='wilbert@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1);
+
+UPDATE rooms SET status='occupied' WHERE room_id=35;
+
+UPDATE bookings SET status='completed'
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='wilbert@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1);
+
+UPDATE rooms SET status='cleaning' WHERE room_id=35;
+
+INSERT INTO room_cleaning (room_id, employee_id, booking_id, cleaning_date, status)
+SELECT b.room_id, e.employee_id, b.booking_id, NOW(), 'scheduled'
+FROM bookings b
+JOIN rooms r ON r.room_id=b.room_id
+JOIN employees e ON e.location_id=r.location_id
+WHERE b.booking_id=(SELECT booking_id FROM bookings
+                    WHERE user_id=(SELECT user_id FROM users WHERE email='wilbert@example.com' ORDER BY user_id DESC LIMIT 1)
+                    ORDER BY booking_id DESC LIMIT 1)
+  AND e.role='Cleaning Staff'
+ORDER BY e.employee_id
+LIMIT 1;
+
+UPDATE room_cleaning SET status='in_progress'
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='wilbert@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1);
+
+UPDATE room_cleaning SET status='completed'
+WHERE booking_id=(SELECT booking_id FROM bookings
+                  WHERE user_id=(SELECT user_id FROM users WHERE email='wilbert@example.com' ORDER BY user_id DESC LIMIT 1)
+                  ORDER BY booking_id DESC LIMIT 1);
+
+UPDATE rooms SET status='available' WHERE room_id=35;

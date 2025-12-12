@@ -185,3 +185,4 @@ DELIMITER ;
 
 
 
+CALL sp_complete_checkout_least_workload(4);

@@ -52,7 +52,7 @@ INSERT INTO bookings (
   ktp_upload_url, ktp_verification_status, ktp_verified_at
 )
 VALUES (
-  ?, 1,
+  4, 1,
   '2025-12-20', '2025-12-23', 3,
   324000,
   1080000, 0, 1080000,
@@ -74,8 +74,8 @@ LIMIT 1;
 -- Full = total_price - dp_amount = 1080000 - 324000 = 756000
 INSERT INTO invoices (booking_id, invoice_type, amount, issued_date, paid_date, status)
 VALUES
-  (?, 'DP',   324000, NOW(), NULL, 'unpaid'),
-  (?, 'Full', 756000, NOW(), NULL, 'unpaid');
+  (4, 'DP',   324000, NOW(), NULL, 'unpaid'),
+  (4, 'Full', 756000, NOW(), NULL, 'unpaid');
 
 
 -- 8) Loki membayar DP -> invoice DP jadi paid
@@ -89,7 +89,7 @@ WHERE booking_id = 12
 -- 9) Setelah DP paid -> booking status jadi dp_paid
 UPDATE bookings
 SET status = 'dp_paid'
-WHERE booking_id = 12;
+WHERE booking_id = 4;
 
 
 -- 10) Setelah DP paid -> room status jadi booked (di-lock untuk tanggal tersebut)
@@ -103,7 +103,7 @@ UPDATE bookings
 SET ktp_upload_url = 'https://cloud.example.com/ktp/loki.jpg',
     ktp_verification_status = 'pending',
     ktp_verified_at = NULL
-WHERE booking_id = 12;
+WHERE booking_id = 4;
 
 
 -- 12) Admin/CS verifikasi KTP -> verified + timestamp
@@ -117,14 +117,14 @@ WHERE booking_id = 12;
 UPDATE invoices
 SET status = 'paid',
     paid_date = NOW()
-WHERE booking_id = 12
+WHERE booking_id = 4
   AND invoice_type = 'Full';
 
 
 -- 14) Hari H check-in -> booking aktif (active)
 UPDATE bookings
 SET status = 'active'
-WHERE booking_id = 12;
+WHERE booking_id = 4;
 
 
 -- 15) Hari H check-in -> room jadi occupied
@@ -136,7 +136,7 @@ WHERE room_id = 1;
 -- 16) Hari check-out -> booking selesai (completed)
 UPDATE bookings
 SET status = 'completed'
-WHERE booking_id = 12;
+WHERE booking_id = 4;
 
 
 -- 17) Setelah checkout -> room masuk status cleaning
