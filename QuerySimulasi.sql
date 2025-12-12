@@ -52,7 +52,7 @@ INSERT INTO bookings (
   ktp_upload_url, ktp_verification_status, ktp_verified_at
 )
 VALUES (
-  5, 1,
+  ?, 1,
   '2025-12-20', '2025-12-23', 3,
   324000,
   1080000, 0, 1080000,
@@ -74,8 +74,8 @@ LIMIT 1;
 -- Full = total_price - dp_amount = 1080000 - 324000 = 756000
 INSERT INTO invoices (booking_id, invoice_type, amount, issued_date, paid_date, status)
 VALUES
-  (12, 'DP',   324000, NOW(), NULL, 'unpaid'),
-  (12, 'Full', 756000, NOW(), NULL, 'unpaid');
+  (?, 'DP',   324000, NOW(), NULL, 'unpaid'),
+  (?, 'Full', 756000, NOW(), NULL, 'unpaid');
 
 
 -- 8) Loki membayar DP -> invoice DP jadi paid
