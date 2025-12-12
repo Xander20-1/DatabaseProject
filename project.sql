@@ -47,7 +47,6 @@ CREATE TABLE room_details (
 );
 
 
-
 CREATE TABLE employees (
     employee_id INT AUTO_INCREMENT PRIMARY KEY,
     location_id INT NOT NULL,

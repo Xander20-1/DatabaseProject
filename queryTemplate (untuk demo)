@@ -1,0 +1,160 @@
+
+-- (1) User Daftar
+INSERT INTO users (full_name, email, phone)
+VALUES (?, ?, ?);
+
+-- (2) User pilih lokasi & kamar
+-- liat lokasi
+SELECT location_id, name, address
+FROM locations
+ORDER BY name;
+
+-- liat kamar di lokasi terpilih
+SELECT room_id, room_type, room_name, price_per_day, status
+FROM rooms
+WHERE location_id = ?
+ORDER BY room_name;
+
+-- detail kamar
+SELECT
+  r.room_id, r.room_type, r.room_name, r.price_per_day, r.status,
+  d.bedrooms, d.bathrooms, d.smoking_allowed, d.room_size,
+  d.has_smart_tv, d.has_kitchen, d.has_balcony,
+  d.maximum_adults, d.maximum_children, d.amenities_description
+FROM rooms r
+LEFT JOIN room_details d ON d.room_id = r.room_id
+WHERE r.room_id = ?;
+
+-- (3) Cek ketersediaan kamar
+SELECT COUNT(*) AS conflict_count
+FROM bookings
+WHERE room_id = ?
+  AND status <> 'cancelled'
+  AND start_date < ?   -- requested_end_date
+  AND end_date   > ?;  -- requested_start_date
+
+-- (4) Total Harga & DP dihitung oleh backend
+
+-- (5) Buat Booking (status: pending)
+INSERT INTO bookings (
+  user_id, room_id,
+  start_date, end_date, total_days,
+  dp_amount,
+  original_total_price, discount_amount, total_price,
+  status,
+  ktp_upload_url, ktp_verification_status, ktp_verified_at
+)
+VALUES (
+  ?, ?,          -- user_id, room_id
+  ?, ?, ?,       -- start_date, end_date, total_days
+  ?,             -- dp_amount
+  ?, ?, ?,       -- original_total_price, discount_amount, total_price
+  'pending',
+  NULL, 'not_uploaded', NULL
+);
+
+-- (6) Buat 2 Invoice: DP & FULL (Keduanya Unpaid)
+INSERT INTO invoices (
+  booking_id, invoice_type, amount, issued_date, paid_date, status
+)
+VALUES
+  (?, 'DP',   ?, NOW(), NULL, 'unpaid'),
+  (?, 'Full', ?, NOW(), NULL, 'unpaid');
+
+-- (7) User Bayar DP
+-- DP invoice -> paid
+UPDATE invoices
+SET status = 'paid',
+    paid_date = NOW()
+WHERE booking_id = ?
+  AND invoice_type = 'DP';
+-- booking -> dp_paid
+UPDATE bookings
+SET status = 'dp_paid'
+WHERE booking_id = ?;
+-- room -> booked
+UPDATE rooms r
+JOIN bookings b ON b.room_id = r.room_id
+SET r.status = 'booked'
+WHERE b.booking_id = ?;
+
+-- (8) User Upload KTP
+UPDATE bookings
+SET ktp_upload_url = ?,
+    ktp_verification_status = 'pending',
+    ktp_verified_at = NULL
+WHERE booking_id = ?;
+
+-- Admin Verifikasi KTP
+UPDATE bookings
+SET ktp_verification_status = 'verified',
+    ktp_verified_at = NOW()
+WHERE booking_id = ?;
+
+-- Admin Reject KTP
+UPDATE bookings
+SET ktp_verification_status = 'rejected',
+    ktp_verified_at = NULL
+WHERE booking_id = ?;
+
+-- (9) User Bayar Full
+UPDATE invoices
+SET status = 'paid',
+    paid_date = NOW()
+WHERE booking_id = ?
+  AND invoice_type = 'Full';
+
+-- (10) Hari H Check-in, booking active, room occupied
+-- Cek syarat
+SELECT
+  b.booking_id,
+  b.status AS booking_status,
+  b.ktp_verification_status,
+  SUM(CASE WHEN i.invoice_type='DP'   AND i.status='paid' THEN 1 ELSE 0 END) AS dp_paid_count,
+  SUM(CASE WHEN i.invoice_type='Full' AND i.status='paid' THEN 1 ELSE 0 END) AS full_paid_count
+FROM bookings b
+LEFT JOIN invoices i ON i.booking_id = b.booking_id
+WHERE b.booking_id = ?
+GROUP BY b.booking_id, b.status, b.ktp_verification_status;
+
+-- update status
+UPDATE bookings
+SET status = 'active'
+WHERE booking_id = ?;
+
+UPDATE rooms r
+JOIN bookings b ON b.room_id = r.room_id
+SET r.status = 'occupied'
+WHERE b.booking_id = ?;
+
+-- (11) Hari H Check-out, booking completed, buat room_cleanng
+UPDATE bookings
+SET status = 'completed'
+WHERE booking_id = ?;
+
+UPDATE rooms r
+JOIN bookings b ON b.room_id = r.room_id
+SET r.status = 'cleaning'
+WHERE b.booking_id = ?;
+
+-- (12) Cleaner Mulai kerja -> in_progress
+UPDATE room_cleaning
+SET status = 'in_progress'
+WHERE booking_id = ?
+  AND status = 'scheduled';
+
+-- (13) Cleaner selesai
+UPDATE room_cleaning
+SET status = 'completed'
+WHERE booking_id = ?;
+
+UPDATE rooms r
+JOIN room_cleaning rc ON rc.room_id = r.room_id
+SET r.status = 'available'
+WHERE rc.booking_id = ?
+  AND rc.status = 'completed';
+
+
+
+
+

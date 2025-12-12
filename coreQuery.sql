@@ -20,21 +20,11 @@ VALUES
   (?, 'DP',   ?, NOW(), NULL, 'unpaid'),
   (?, 'Full', ?, NOW(), NULL, 'unpaid');
 
--- Buat task cleaning  setelah checkout
-INSERT INTO room_cleaning (room_id, employee_id, booking_id, cleaning_date, status)
-SELECT b.room_id, e.employee_id, b.booking_id, NOW(), 'scheduled'
-FROM bookings b
-JOIN rooms r ON r.room_id = b.room_id
-JOIN employees e ON e.location_id = r.location_id
-WHERE b.booking_id = ?
-  AND e.role = 'Cleaning Staff'
-ORDER BY e.employee_id
-LIMIT 1;
 
--- 2) Update status otomatis (dengan CASE WHEN)\
+-- 2) Update status otomatis (dengan CASE WHEN)
 -- Update status booking berdasarkan kondisi pembayaran + kTP
 UPDATE bookings b
-JOIN (
+LEFT JOIN (
   SELECT
     booking_id,
     SUM(CASE WHEN invoice_type='DP'   AND status='paid' THEN 1 ELSE 0 END) AS dp_paid_count,
@@ -45,17 +35,16 @@ JOIN (
 SET b.status = CASE
   WHEN b.status = 'cancelled' THEN 'cancelled'
   WHEN b.ktp_verification_status = 'verified'
-       AND x.dp_paid_count >= 1
-       AND x.full_paid_count >= 1
+       AND COALESCE(x.dp_paid_count,0) >= 1
+       AND COALESCE(x.full_paid_count,0) >= 1
        AND CURDATE() >= b.start_date
        AND CURDATE() <  b.end_date
     THEN 'active'
-  WHEN x.dp_paid_count >= 1
+  WHEN COALESCE(x.dp_paid_count,0) >= 1
     THEN 'dp_paid'
   ELSE 'pending'
 END
 WHERE b.booking_id = ?;
-
 
 -- Update Status room otomatis berdasarkan kondisi booking & cleaning
 UPDATE rooms r
