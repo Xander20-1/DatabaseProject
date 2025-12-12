@@ -25,7 +25,7 @@ LIMIT 1;
 -- 3) Ambil room_id untuk kamar yang dipilih (contoh: Tokyo)
 SELECT room_id, room_name, price_per_day, status
 FROM rooms
-WHERE room_name = 'Tokyo';
+WHERE room_name = 'Shibuya';
 
 -- (GANTI di query berikut) Misal hasilnya: room_id = 1, price_per_day = 360000
 
@@ -52,7 +52,7 @@ INSERT INTO bookings (
   ktp_upload_url, ktp_verification_status, ktp_verified_at
 )
 VALUES (
-  4, 1,
+  6, 2,
   '2025-12-20', '2025-12-23', 3,
   324000,
   1080000, 0, 1080000,
@@ -74,28 +74,28 @@ LIMIT 1;
 -- Full = total_price - dp_amount = 1080000 - 324000 = 756000
 INSERT INTO invoices (booking_id, invoice_type, amount, issued_date, paid_date, status)
 VALUES
-  (4, 'DP',   324000, NOW(), NULL, 'unpaid'),
-  (4, 'Full', 756000, NOW(), NULL, 'unpaid');
+  (7, 'DP',   324000, NOW(), NULL, 'unpaid'),
+  (7, 'Full', 756000, NOW(), NULL, 'unpaid');
 
 
 -- 8) Loki membayar DP -> invoice DP jadi paid
 UPDATE invoices
 SET status = 'paid',
     paid_date = NOW()
-WHERE booking_id = 12
+WHERE booking_id = 7
   AND invoice_type = 'DP';
 
 
 -- 9) Setelah DP paid -> booking status jadi dp_paid
 UPDATE bookings
 SET status = 'dp_paid'
-WHERE booking_id = 4;
+WHERE booking_id = 7;
 
 
 -- 10) Setelah DP paid -> room status jadi booked (di-lock untuk tanggal tersebut)
 UPDATE rooms
 SET status = 'booked'
-WHERE room_id = 1;
+WHERE room_id = 2;
 
 
 -- 11) Loki upload KTP -> status verifikasi jadi pending
@@ -103,46 +103,46 @@ UPDATE bookings
 SET ktp_upload_url = 'https://cloud.example.com/ktp/loki.jpg',
     ktp_verification_status = 'pending',
     ktp_verified_at = NULL
-WHERE booking_id = 4;
+WHERE booking_id = 7;
 
 
 -- 12) Admin/CS verifikasi KTP -> verified + timestamp
 UPDATE bookings
 SET ktp_verification_status = 'verified',
     ktp_verified_at = NOW()
-WHERE booking_id = 12;
+WHERE booking_id = 7;
 
 
 -- 13) Loki membayar Full (H-1) -> invoice Full jadi paid
 UPDATE invoices
 SET status = 'paid',
     paid_date = NOW()
-WHERE booking_id = 4
+WHERE booking_id = 7
   AND invoice_type = 'Full';
 
 
 -- 14) Hari H check-in -> booking aktif (active)
 UPDATE bookings
 SET status = 'active'
-WHERE booking_id = 4;
+WHERE booking_id = 7;
 
 
 -- 15) Hari H check-in -> room jadi occupied
 UPDATE rooms
 SET status = 'occupied'
-WHERE room_id = 1;
+WHERE room_id = 2;
 
 
 -- 16) Hari check-out -> booking selesai (completed)
 UPDATE bookings
 SET status = 'completed'
-WHERE booking_id = 4;
+WHERE booking_id = 7;
 
 
 -- 17) Setelah checkout -> room masuk status cleaning
 UPDATE rooms
 SET status = 'cleaning'
-WHERE room_id = 1;
+WHERE room_id = 2;
 
 
 -- 18) Sistem buat task cleaning (assign 1 Cleaning Staff dari lokasi yang sama)
@@ -156,7 +156,7 @@ SELECT
 FROM bookings b
 JOIN rooms r ON r.room_id = b.room_id
 JOIN employees e ON e.location_id = r.location_id
-WHERE b.booking_id = 12
+WHERE b.booking_id = 7
   AND e.role = 'Cleaning Staff'
 ORDER BY e.employee_id
 LIMIT 1;
@@ -165,35 +165,35 @@ LIMIT 1;
 -- 19) Petugas mulai cleaning -> status in_progress
 UPDATE room_cleaning
 SET status = 'in_progress'
-WHERE booking_id = 12;
+WHERE booking_id = 7;
 
 
 -- 20) Petugas selesai cleaning -> status completed
 UPDATE room_cleaning
 SET status = 'completed'
-WHERE booking_id = 12;
+WHERE booking_id = 7;
 
 
 -- 21) Setelah cleaning completed -> room kembali available
 UPDATE rooms
 SET status = 'available'
-WHERE room_id = 1;
+WHERE room_id = 2;
 
 
 -- 22) (Opsional) Cek hasil akhir: booking, invoice, cleaning, room
 SELECT booking_id, status, start_date, end_date
 FROM bookings
-WHERE booking_id = 12;
+WHERE booking_id = 7;
 
 SELECT invoice_type, amount, status, paid_date
 FROM invoices
-WHERE booking_id = 12
+WHERE booking_id = 7
 ORDER BY invoice_type;
 
 SELECT cleaning_id, status, cleaning_date, employee_id
 FROM room_cleaning
-WHERE booking_id = 12;
+WHERE booking_id = 7;
 
 SELECT room_id, room_name, status
 FROM rooms
-WHERE room_id = 1;
+WHERE room_id = 2;
